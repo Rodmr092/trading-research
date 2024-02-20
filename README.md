@@ -24,7 +24,7 @@ This journey is more than a foray into financial analysis—it's a crusade to di
 
 Your insights, critiques, and contributions are the lifeblood of this journey. Whether you're a veteran coder, a sage in finance, or simply a curious onlooker, your input can help steer this exploration to new horizons.
 
-- **Contributing:** Venture to [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on proposing changes or adding to the project.
+- **Contributing:** Venture to [contributing.md](contributing.md) for guidelines on proposing changes or adding to the project.
 - **Feedback:** Open an issue or propose a pull request if you have ideas for improvement or new analyses.
 
 ### Navigating the Repository

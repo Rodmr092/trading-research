@@ -42,5 +42,4 @@ A heartfelt thanks to the coding communities, whose wisdom has been a beacon on 
 and to the open-source projects and datasets that form the bedrock of my analyses.
 
 License
-
-This project is shepherded under the MIT License - Do what you want.
+This project is licensed under the MIT License - see the LICENSE file for details

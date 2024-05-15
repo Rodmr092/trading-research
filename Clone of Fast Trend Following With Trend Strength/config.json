@@ -1,0 +1,8 @@
+{
+    "cloud-id": 16876819,
+    "algorithm-language": "Python",
+    "parameters": {},
+    "description": "This algorithm uses a fast trend filter to forecast the upcoming trend of Futures contracts and to determine position sizing in a portfolio based on the trend strength. To reduce trading fees, it applies a buffering technique to each daily rebalance. This strategy is a re-creation of strategy #8 from Advanced Futures Trading Strategies by Robert Carver.",
+    "organization-id": "807e1ee023e1bf00e708f68469f03301",
+    "python-venv": 1
+}

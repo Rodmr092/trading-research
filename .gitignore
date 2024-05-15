@@ -1,0 +1,26 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+trading_research_venv/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment variables
+.env
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# Output files
+*.log
+
+# QuantConnect Data
+.QuantConnect/
+lean/
+data/
+lean.json

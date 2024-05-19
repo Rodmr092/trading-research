@@ -37,6 +37,39 @@ def calculate_roll_date(expiration_date):
     roll_date = expiration_date - timedelta(weeks=1)
     return roll_date
 
+def calculate_return_in_usd(symbol, initial_price, final_price, instruments):
+    """
+    Helper function to calculate returns in USD
+    """
+    params = instruments[symbol]
+    delta_price = final_price - initial_price
+    return_in_usd = delta_price * params['multiplier']
+    return return_in_usd
+
+def calculate_return_in_mxn(return_in_usd, fx_rates_df):
+    """
+    Helper function to calculate returns in MXN
+    """
+    average_fx_rate = fx_rates_df['close'].mean()
+    return_in_mxn = return_in_usd * average_fx_rate
+    return return_in_mxn
+
+def calculate_transaction_costs(params, history_df, start_date, end_date):
+    """
+    Function to calculate transaction costs
+    """
+    expiration_dates = params['expiration_dates']
+    multiplier = params['multiplier']
+    spread = params['spread']
+    commission = params['commission']
+
+    transaction_costs = 0
+    for expiration_date in expiration_dates:
+        roll_date = calculate_roll_date(expiration_date)
+        if start_date <= roll_date <= end_date:
+            transaction_costs += ((spread * multiplier) + commission) * 2
+    return transaction_costs
+
 
 
 

@@ -1,8 +1,9 @@
 {
-    "cloud-id": 17200900,
+    "channel-id": "LOCAL-5a46018ccf5e1d126907a1f845ad1e76",
+    "description": "",
     "algorithm-language": "Python",
     "parameters": {},
-    "description": "",
+    "cloud-id": 17978578,
     "organization-id": "807e1ee023e1bf00e708f68469f03301",
     "python-venv": 1
 }

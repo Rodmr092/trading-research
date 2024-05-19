@@ -1,0 +1,55 @@
+{
+    "folders": [
+        {
+            "name": "Project",
+            "path": "c:\\Users\\Gerardo\\OneDrive\\Documentos\\Data Science\\Trading Research\\Futures pricing"
+        }
+    ],
+    "settings": {
+        "python.autoComplete.extraPaths": [
+            "c:\\Users\\Gerardo\\OneDrive\\Documentos\\Data Science\\Trading Research\\Library"
+        ],
+        "python.analysis.extraPaths": [
+            "c:\\Users\\Gerardo\\OneDrive\\Documentos\\Data Science\\Trading Research\\Library"
+        ],
+        "files.autoSave": "afterDelay",
+        "files.exclude": {
+            "**.vscode": true,
+            "**.idea": true,
+            "config.json": true,
+            "qc.code-workspace": true,
+            "bin": true,
+            "obj": true,
+            "backtests": true,
+            "live": true,
+            "optimizations": true,
+            "storage": true,
+            "report": true,
+            "__pycache__": true,
+            ".ipynb_checkpoints": true,
+            ".idea": true,
+            ".vscode": true
+        },
+        "files.watcherExclude": {
+            "bin/**": true,
+            "obj/**": true,
+            "backtests/**": true,
+            "live/**": true,
+            "optimizations/**": true,
+            "storage/**": true,
+            "report/**": true,
+            "__pycache__/**": true,
+            ".ipynb_checkpoints/**": true,
+            ".idea/**": true,
+            ".vscode/**": true
+        },
+        "files.readonlyInclude": {
+            "**/*.py": false,
+            "**/*.cs": false,
+            "**/*.ipynb": false,
+            "c:/Users/Gerardo/OneDrive/Documentos/Data Science/Trading Research/Futures pricing/**/*.py": false,
+            "c:/Users/Gerardo/OneDrive/Documentos/Data Science/Trading Research/Futures pricing/**/*.cs\"": false,
+            "c:/Users/Gerardo/OneDrive/Documentos/Data Science/Trading Research/Futures pricing/**/*.ipynb": false
+        }
+    }
+}

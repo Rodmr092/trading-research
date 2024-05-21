@@ -1,0 +1,8 @@
+{
+    "cloud-id": 17064368,
+    "algorithm-language": "Python",
+    "parameters": {},
+    "description": "This algorithm builds upon the Fast Trend Following strategy so that the size of the forecast is adjusted to reflect the probability that the trend reverses. To accomplish this, it applies a set of EMA crossover trend filters and scales their forecasts to maximize risk-adjusted returns. This algorithm is a re-creation of strategy #12 from Advanced Futures Trading Strategies by Robert Carver.",
+    "organization-id": "807e1ee023e1bf00e708f68469f03301",
+    "python-venv": 1
+}

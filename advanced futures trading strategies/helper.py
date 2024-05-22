@@ -59,6 +59,7 @@ def calculate_percentage_return(symbol, price_series, instruments, num_contracts
     return percentage_returns
 
 
+
 def calculate_and_merge_returns(symbol, price_series, instruments):
     """
     Inputs 
@@ -78,7 +79,6 @@ def calculate_and_merge_returns(symbol, price_series, instruments):
     del returns_df
     del percentage_returns
     return merged_df
-
 
 def calculate_return_in_usd(symbol, initial_price, final_price, instruments, num_contracts=1):
     params = instruments[symbol]

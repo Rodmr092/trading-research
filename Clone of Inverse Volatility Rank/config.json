@@ -1,8 +1,0 @@
-{
-    "cloud-id": 17130138,
-    "algorithm-language": "Python",
-    "parameters": {},
-    "description": "In this strategy, we construct a Future portfolio with 10 liquid Futures in the universe, coming from underlying assets of different aspects. While the main focus is to reduce overall variance, a risk distribution approach is adopted for portfolio construction. We shortlist 5 continuous future contracts with the lowest 30-day volatility, then we assign weight to them by inverse volatility method.",
-    "organization-id": "807e1ee023e1bf00e708f68469f03301",
-    "python-venv": 1
-}

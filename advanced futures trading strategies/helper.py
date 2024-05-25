@@ -5,20 +5,12 @@ from datetime import datetime, timedelta
 import pandas as pd
 from scipy.stats import skew
 
-def calculate_expiration_date(year, month):
-    first_day_of_month = datetime(year, month, 1)
-    first_friday = first_day_of_month + timedelta(days=(4 - first_day_of_month.weekday() + 7) % 7)
-    third_friday = first_friday + timedelta(weeks=2)
-    return third_friday
 
-expiration_dates = {
-    'ES': [calculate_expiration_date(year, month) for year in range(2007, 2024) for month in [3, 6, 9, 12]],
-    'MES': [calculate_expiration_date(year, month) for year in range(2019, 2024) for month in [3, 6, 9, 12]]
-}
-
-def calculate_roll_date(expiration_date):
-    roll_date = expiration_date - timedelta(weeks=1)
-    return roll_date
+# Function to compute FX change to MXN
+def compute_fx_change(returns, timeseries):
+    fx_rate = timeseries['close'].iloc[-1]  # Extract the last closing price of USDMXN
+    converted_returns = returns * fx_rate
+    return converted_returns
     
 def cumulated_returns(symbol, previous_price, current_price, instruments):
     params = instruments[symbol]
@@ -74,26 +66,32 @@ def calculate_and_merge_returns(symbol, price_series, instruments):
     return merged_df
 
 
+def calculate_rolling_costs(instrument_details, timeseries):
+    if 'rolling_months' not in instrument_details:
+        return 0  # No rolling months, hence no rolling costs
+    
+    rolling_costs = 0
+    rolling_months = instrument_details['rolling_months']
+    years = range(timeseries.index[0][1].year, timeseries.index[-1][1].year + 1)
+    
+    for year in years:
+        for month in rolling_months:
+            # Find the first available trading day in the rolling month
+            roll_date = pd.Timestamp(year=year, month=month, day=1)
+            found = False
+            while roll_date.month == month:
+                if roll_date.date() in timeseries.index.get_level_values(1).date:
+                    cost_per_roll = instrument_details['commission'] + (instrument_details['spread'] / 2) * instrument_details['multiplier']
+                    rolling_costs += cost_per_roll * 2  # Buy and Sell
+                    found = True
+                    break
+                roll_date += pd.Timedelta(days=1)
+            if not found:
+                print(f"No trading day found in month: {month} of year: {year}")
+    
+    return rolling_costs
 
 
-def calculate_transaction_costs(params, history_df, start_date, end_date, num_contracts=1):
-    # Convert to datetime if the inputs are tuples
-    if isinstance(start_date, tuple):
-        start_date = datetime(*start_date)
-    if isinstance(end_date, tuple):
-        end_date = datetime(*end_date)
-
-    expiration_dates = params['expiration_dates']
-    multiplier = params['multiplier']
-    spread = params['spread']
-    commission = params['commission']
-
-    transaction_costs = 0
-    for expiration_date in expiration_dates:
-        roll_date = calculate_roll_date(expiration_date)
-        if start_date <= roll_date <= end_date:
-            transaction_costs += ((spread * multiplier) + commission) * 2 * num_contracts
-    return transaction_costs
 
 def calculate_statistics(df, trading_days_per_year):
     # Calculate the mean of the percentage returns
@@ -187,6 +185,34 @@ def calculate_contract_risk(summary, instruments, timeseries):
 
     return summary
 
+
+def simulate_buy_and_hold(timeseries, instrument_details, fx_timeseries, num_contracts=1):
+    """
+    Function to simulate buy and hold strategy for a futures contract
+    
+    inputs:
+    timeseries: pandas DataFrame containing the price data
+    instrument_details: dictionary containing the instrument details
+    fx_timeseries: pandas DataFrame containing the forex data for currency conversion
+    num_contracts: number of contracts to trade
+
+    outputs:
+    net_return_base: net return in base currency
+    net_return_mxn: net return in MXN
+    """
+    first_price = timeseries['close'].iloc[0]
+    last_price = timeseries['close'].iloc[-1]
+
+    # Calculate rolling costs
+    rolling_costs = calculate_rolling_costs(instrument_details, timeseries)
+    
+    # Calculate net return in base currency
+    net_return_base = (last_price - first_price) * instrument_details['multiplier'] * num_contracts - rolling_costs
+    
+    # Convert net return to MXN
+    net_return_mxn = compute_fx_change(net_return_base, fx_timeseries)
+    
+    return net_return_base, net_return_mxn
 
 
 if __name__ == '__main__':

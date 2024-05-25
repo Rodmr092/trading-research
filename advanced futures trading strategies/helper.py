@@ -3,6 +3,7 @@ from AlgorithmImports import *
 #endregion
 from datetime import datetime, timedelta
 import pandas as pd
+from scipy.stats import skew
 
 def calculate_expiration_date(year, month):
     first_day_of_month = datetime(year, month, 1)
@@ -25,11 +26,9 @@ def cumulated_returns(symbol, previous_price, current_price, instruments):
     return_value = delta_price * params['multiplier']
     return return_value
 
-
-
 def calculate_return(symbol, price_series, instruments):
-    params = instruments[symbol]
-    multiplier = params['multiplier']
+    params = instruments.get(symbol, {})
+    multiplier = params.get('multiplier', 1)
     # Calculate daily returns in price points
     price_returns = price_series.diff().dropna()
     # Calculate daily returns in currency
@@ -42,23 +41,17 @@ def calculate_return(symbol, price_series, instruments):
     return return_df
 
 def calculate_percentage_return(symbol, price_series, instruments, num_contracts):
-    # Extraer el multiplicador del diccionario de instrumentos
+    # Extract the multiplier from the instruments dictionary
     params = instruments.get(symbol, {})
     multiplier = params.get('multiplier', 1)
-
-    # Calcular los cambios en la serie de precios
-    price_changes = price_series.diff().fillna(0)  # Usar fillna(0) para manejar el valor NaN de la primera observación
-
-    # Calcular retornos en dólares para cada paso de tiempo
+    # Calculate changes in the price series
+    price_changes = price_series.diff().fillna(0)  # Use fillna(0) to handle the NaN value of the first observation
+    # Calculate returns in dollars for each time step
     returns_in_dollars = price_changes * multiplier * num_contracts
-
-    # Calcular los retornos porcentuales basados en el precio de la observación anterior
+    # Calculate percentage returns based on the previous observation's price
     percentage_returns = (returns_in_dollars / (price_series.shift(1) * multiplier * num_contracts).fillna(1)) * 100
-
-    # Retornar la serie de retornos porcentuales
+    # Return the series of percentage returns
     return percentage_returns
-
-
 
 def calculate_and_merge_returns(symbol, price_series, instruments):
     """
@@ -68,28 +61,19 @@ def calculate_and_merge_returns(symbol, price_series, instruments):
     instruments: dict - a dictionary of instruments with metadata
 
     Returns
-    merged_df: pd.DataFrame - a DataFrame with both return and percentage return columns
+    merged_df: pd.DataFrame - a DataFrame with close, return, and percentage return columns
     """
-    returns_df = calculate_return(symbol, price_series, instruments)
+    base_returns = calculate_return(symbol, price_series, instruments)
     percentage_returns = calculate_percentage_return(symbol, price_series, instruments, num_contracts=1)
     
-    # Unir los DataFrames en base al índice
-    merged_df = returns_df.join(percentage_returns.rename('percentage_return'))
-    # Clean up the memory
-    del returns_df
-    del percentage_returns
+    # Merge the DataFrames based on the index
+    merged_df = base_returns.join(percentage_returns.rename('percentage_return'))
+    # Include the original close price series
+    merged_df['close'] = price_series
+    
     return merged_df
 
-def calculate_return_in_usd(symbol, initial_price, final_price, instruments, num_contracts=1):
-    params = instruments[symbol]
-    delta_price = final_price - initial_price
-    return_in_usd = delta_price * params['multiplier'] * num_contracts
-    return return_in_usd
 
-def calculate_return_in_mxn(return_in_usd, fx_rates_df):
-    average_fx_rate = fx_rates_df['close'].mean()
-    return_in_mxn = return_in_usd * average_fx_rate
-    return return_in_mxn
 
 
 def calculate_transaction_costs(params, history_df, start_date, end_date, num_contracts=1):
@@ -110,6 +94,98 @@ def calculate_transaction_costs(params, history_df, start_date, end_date, num_co
         if start_date <= roll_date <= end_date:
             transaction_costs += ((spread * multiplier) + commission) * 2 * num_contracts
     return transaction_costs
+
+def calculate_statistics(df, trading_days_per_year):
+    # Calculate the mean of the percentage returns
+    mean_return = df['percentage_return'].mean()
+    # Calculate the standard deviation of the percentage returns
+    std_dev = df['percentage_return'].std()
+    # Annualize the mean return and standard deviation
+    annualized_mean = mean_return * trading_days_per_year
+    annualized_std_dev = std_dev * np.sqrt(trading_days_per_year)
+    # Calculate the daily Sharpe ratio (assuming risk-free rate is 0)
+    daily_sharpe_ratio = mean_return / std_dev
+    # Calculate the annualized Sharpe ratio
+    annualized_sharpe_ratio = daily_sharpe_ratio * np.sqrt(trading_days_per_year)
+    
+    return mean_return, std_dev, annualized_mean, annualized_std_dev, daily_sharpe_ratio, annualized_sharpe_ratio
+
+def calculate_fat_tail_ratios(df, mean_return):
+    demeaned_returns = df['percentage_return'] - mean_return
+    demeaned_returns = demeaned_returns.dropna()
+
+    if len(demeaned_returns) > 0:
+        p1 = np.percentile(demeaned_returns, 1)
+        p30 = np.percentile(demeaned_returns, 30)
+        p70 = np.percentile(demeaned_returns, 70)
+        p99 = np.percentile(demeaned_returns, 99)
+
+        lpr = p1 / p30 if p30 != 0 else np.nan
+        upr = p99 / p70 if p70 != 0 else np.nan
+
+        lower_fat_tail_ratio = lpr / 4.43 if not np.isnan(lpr) else np.nan
+        higher_fat_tail_ratio = upr / 4.43 if not np.isnan(upr) else np.nan
+    else:
+        lower_fat_tail_ratio = np.nan
+        higher_fat_tail_ratio = np.nan
+    
+    return lower_fat_tail_ratio, higher_fat_tail_ratio
+
+
+def calculate_monthly_skew(df):
+    df = df.reset_index(level='symbol', drop=True)
+    monthly_returns = df['percentage_return'].resample('M').apply(lambda x: ((x + 1).prod() - 1) * 100)
+    monthly_skew = skew(monthly_returns.dropna())
+    
+    return monthly_skew
+
+def summarize_statistics(timeseries, trading_days_per_year):
+    summary = {}
+
+    for symbol, df in timeseries.items():
+        mean_return, std_dev, annualized_mean, annualized_std_dev, daily_sharpe_ratio, annualized_sharpe_ratio = calculate_statistics(df, trading_days_per_year)
+        lower_fat_tail_ratio, higher_fat_tail_ratio = calculate_fat_tail_ratios(df, mean_return)
+        monthly_skew = calculate_monthly_skew(df)
+        
+        summary[symbol] = {
+            'mean_return': mean_return,
+            'std_dev': std_dev,
+            'annualized_mean': annualized_mean,
+            'annualized_std_dev': annualized_std_dev,
+            'daily_sharpe_ratio': daily_sharpe_ratio,
+            'annualized_sharpe_ratio': annualized_sharpe_ratio,
+            'monthly_skew': monthly_skew,
+            'lower_fat_tail_ratio': lower_fat_tail_ratio,
+            'higher_fat_tail_ratio': higher_fat_tail_ratio
+        }
+
+    return summary
+
+def calculate_contract_risk(summary, instruments, timeseries):
+    """
+    Calculate daily and annualized contract risk for each symbol and update the summary dictionary.
+    
+    Inputs:
+    summary: dict - the dictionary of summary statistics
+    instruments: dict - the dictionary of instruments with metadata
+    timeseries: dict - the dictionary of time series data
+    
+    Returns:
+    summary: dict - the updated summary dictionary with contract risks
+    """
+    for symbol in summary.keys():
+        multiplier = instruments.get(symbol, {}).get('multiplier', 1)
+        last_closing_price = timeseries[symbol]['close'].iloc[-1]
+        std_dev = summary[symbol]['std_dev'] / 100  # Convert percentage to decimal
+        annualized_std_dev = summary[symbol]['annualized_std_dev'] / 100  # Convert percentage to decimal
+
+        daily_contract_risk = multiplier * last_closing_price * std_dev
+        annualized_contract_risk = multiplier * last_closing_price * annualized_std_dev
+
+        summary[symbol]['daily_contract_risk'] = daily_contract_risk
+        summary[symbol]['annualized_contract_risk'] = annualized_contract_risk
+
+    return summary
 
 
 

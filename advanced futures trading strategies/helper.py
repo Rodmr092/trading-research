@@ -42,8 +42,16 @@ def calculate_percentage_return(symbol, price_series, instruments, num_contracts
     returns_in_dollars = price_changes * multiplier * num_contracts
     # Calculate percentage returns based on the previous observation's price
     percentage_returns = (returns_in_dollars / (price_series.shift(1) * multiplier * num_contracts).fillna(1)) * 100
+    # Handle NaN and infinite values
+    percentage_returns.replace([np.inf, -np.inf], np.nan, inplace=True)
+    percentage_returns.dropna(inplace=True)
+    # Debug: Check if percentage_returns is empty
+    if percentage_returns.empty:
+        print(f"Warning: Calculated percentage_returns is empty for symbol {symbol}")
     # Return the series of percentage returns
     return percentage_returns
+
+
 
 def calculate_and_merge_returns(symbol, price_series, instruments):
     """
@@ -55,13 +63,22 @@ def calculate_and_merge_returns(symbol, price_series, instruments):
     Returns
     merged_df: pd.DataFrame - a DataFrame with close, return, and percentage return columns
     """
+    # Calculate base returns
     base_returns = calculate_return(symbol, price_series, instruments)
+    # Calculate percentage returns
     percentage_returns = calculate_percentage_return(symbol, price_series, instruments, num_contracts=1)
-    
+    # Check if percentage_returns is not empty
+    if percentage_returns.empty:
+        print(f"Warning: percentage_returns is empty for symbol {symbol}")
     # Merge the DataFrames based on the index
-    merged_df = base_returns.join(percentage_returns.rename('percentage_return'))
+    merged_df = base_returns.join(percentage_returns.rename('percentage_return'), how='left')
     # Include the original close price series
     merged_df['close'] = price_series
+    # Handle NaN values after merging
+    merged_df.dropna(subset=['percentage_return'], inplace=True)
+    # Debug: Check if 'percentage_return' column exists after merging
+    if 'percentage_return' not in merged_df.columns:
+        print(f"Error: 'percentage_return' column missing for symbol {symbol} after merging")
     
     return merged_df
 
@@ -86,8 +103,6 @@ def calculate_rolling_costs(instrument_details, timeseries):
                     found = True
                     break
                 roll_date += pd.Timedelta(days=1)
-            if not found:
-                print(f"No trading day found in month: {month} of year: {year}")
     
     return rolling_costs
 

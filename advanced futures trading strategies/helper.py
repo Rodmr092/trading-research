@@ -53,15 +53,17 @@ def calculate_percentage_return(symbol, price_series, instruments, num_contracts
 
 
 
-def calculate_and_merge_returns(symbol, price_series, instruments):
+
+def calculate_and_merge_returns(symbol, price_series, volume_series, instruments):
     """
     Inputs 
     symbol: str - a symbol to calculate returns for
     price_series: pd.Series - a price series to calculate returns from
+    volume_series: pd.Series - a volume series to include in the final DataFrame
     instruments: dict - a dictionary of instruments with metadata
 
     Returns
-    merged_df: pd.DataFrame - a DataFrame with close, return, and percentage return columns
+    merged_df: pd.DataFrame - a DataFrame with close, volume, return, and percentage return columns
     """
     # Calculate base returns
     base_returns = calculate_return(symbol, price_series, instruments)
@@ -72,8 +74,9 @@ def calculate_and_merge_returns(symbol, price_series, instruments):
         print(f"Warning: percentage_returns is empty for symbol {symbol}")
     # Merge the DataFrames based on the index
     merged_df = base_returns.join(percentage_returns.rename('percentage_return'), how='left')
-    # Include the original close price series
+    # Include the original close price series and volume series
     merged_df['close'] = price_series
+    merged_df['volume'] = volume_series
     # Handle NaN values after merging
     merged_df.dropna(subset=['percentage_return'], inplace=True)
     # Debug: Check if 'percentage_return' column exists after merging
@@ -81,6 +84,7 @@ def calculate_and_merge_returns(symbol, price_series, instruments):
         print(f"Error: 'percentage_return' column missing for symbol {symbol} after merging")
     
     return merged_df
+
 
 
 def calculate_rolling_costs(instrument_details, timeseries):

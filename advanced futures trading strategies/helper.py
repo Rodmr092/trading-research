@@ -239,7 +239,7 @@ def calculate_short_term_ewma(data):
     Returns two series: ewma_32 and ewma_32_std.
     """
     ewma_32 = data['percentage_return'].ewm(span=32, adjust=False).mean()
-    ewma_32_std = ewma_32.rolling(window=32).std()
+    ewma_32_std = ewma_32.ewm(span=32, adjust=False).std()
     return ewma_32, ewma_32_std
 
 def calculate_long_term_ewma(data):
@@ -248,8 +248,9 @@ def calculate_long_term_ewma(data):
     Returns two series: ewma_2560 and ewma_2560_std.
     """
     ewma_2560 = data['percentage_return'].ewm(span=2560, adjust=False).mean()
-    ewma_2560_std = ewma_2560.rolling(window=2560).std()
+    ewma_2560_std = ewma_2560.ewm(span=2560, adjust=False).std()
     return ewma_2560, ewma_2560_std
+
 
 def calculate_combined_std(timeseries):
     """
@@ -260,8 +261,7 @@ def calculate_combined_std(timeseries):
     for symbol, data in timeseries.items():
         ewma_32, ewma_32_std = calculate_short_term_ewma(data)
         ewma_2560, ewma_2560_std = calculate_long_term_ewma(data)
-        combined_ewma = 0.3 * ewma_2560 + 0.7 * ewma_32
-        combined_std[symbol] = combined_ewma.rolling(window=32).std()
+        combined_std[symbol] = 0.3 * ewma_2560_std + 0.7 * ewma_32_std
     return combined_std
 
 if __name__ == '__main__':

@@ -233,6 +233,36 @@ def simulate_buy_and_hold(timeseries, instrument_details, fx_timeseries, num_con
     
     return net_return_base, net_return_mxn
 
+def calculate_short_term_ewma(data):
+    """
+    Calculate the short-term EWMA (32 periods) for the percentage returns and its standard deviation.
+    Returns two series: ewma_32 and ewma_32_std.
+    """
+    ewma_32 = data['percentage_return'].ewm(span=32, adjust=False).mean()
+    ewma_32_std = ewma_32.rolling(window=32).std()
+    return ewma_32, ewma_32_std
+
+def calculate_long_term_ewma(data):
+    """
+    Calculate the long-term EWMA (2560 periods) for the percentage returns and its standard deviation.
+    Returns two series: ewma_2560 and ewma_2560_std.
+    """
+    ewma_2560 = data['percentage_return'].ewm(span=2560, adjust=False).mean()
+    ewma_2560_std = ewma_2560.rolling(window=2560).std()
+    return ewma_2560, ewma_2560_std
+
+def calculate_combined_std(timeseries):
+    """
+    Calculate the combined standard deviation of returns using 0.3*long_term_ewma + 0.7*short_term_ewma.
+    Returns a dictionary with symbols as keys and combined standard deviation as values.
+    """
+    combined_std = {}
+    for symbol, data in timeseries.items():
+        ewma_32, ewma_32_std = calculate_short_term_ewma(data)
+        ewma_2560, ewma_2560_std = calculate_long_term_ewma(data)
+        combined_ewma = 0.3 * ewma_2560 + 0.7 * ewma_32
+        combined_std[symbol] = combined_ewma.rolling(window=32).std()
+    return combined_std
 
 if __name__ == '__main__':
     print("This is a helper module. Import it into your main program.")

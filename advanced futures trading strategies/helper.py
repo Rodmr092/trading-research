@@ -111,14 +111,22 @@ def calculate_rolling_costs(instrument_details, timeseries):
     return rolling_costs
 
 
+import numpy as np
+
+def annualize_mean_return(mean_daily_return, trading_days_per_year):
+    mean_return_decimal = mean_daily_return / 100
+    annualized_mean_decimal = (1 + mean_return_decimal) ** trading_days_per_year - 1
+    annualized_mean = annualized_mean_decimal * 100
+    return annualized_mean
 
 def calculate_statistics(df, trading_days_per_year):
     # Calculate the mean of the percentage returns
     mean_return = df['percentage_return'].mean()
     # Calculate the standard deviation of the percentage returns
     std_dev = df['percentage_return'].std()
-    # Annualize the mean return and standard deviation
-    annualized_mean = mean_return * trading_days_per_year
+    # Annualize the mean return
+    annualized_mean = annualize_mean_return(mean_return, trading_days_per_year)
+    # Annualize the standard deviation
     annualized_std_dev = std_dev * np.sqrt(trading_days_per_year)
     # Calculate the daily Sharpe ratio (assuming risk-free rate is 0)
     daily_sharpe_ratio = mean_return / std_dev
@@ -126,6 +134,7 @@ def calculate_statistics(df, trading_days_per_year):
     annualized_sharpe_ratio = daily_sharpe_ratio * np.sqrt(trading_days_per_year)
     
     return mean_return, std_dev, annualized_mean, annualized_std_dev, daily_sharpe_ratio, annualized_sharpe_ratio
+
 
 def calculate_fat_tail_ratios(df, mean_return):
     demeaned_returns = df['percentage_return'] - mean_return

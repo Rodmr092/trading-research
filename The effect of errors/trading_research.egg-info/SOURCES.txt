@@ -1,0 +1,15 @@
+setup.py
+src/__init__.py
+src/data_management.py
+src/error_analysis.py
+src/error_analysis_test.py
+src/portfolio_optimizer.py
+tests/__init__.py
+tests/test_data_management.py
+tests/test_error_analysis.py
+tests/test_portfolio_optimizer.py
+trading_research.egg-info/PKG-INFO
+trading_research.egg-info/SOURCES.txt
+trading_research.egg-info/dependency_links.txt
+trading_research.egg-info/requires.txt
+trading_research.egg-info/top_level.txt

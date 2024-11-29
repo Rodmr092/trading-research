@@ -1,0 +1,28 @@
+Trading Research/
+└── The effect of errors/
+    ├── notebooks/
+    │   ├── 01_data_collection.ipynb
+    │   ├── 02_portfolio_optimization.ipynb
+    │   ├── 03_error_analysis.ipynb
+    │   └── 04_visualizations.ipynb
+    ├── src/
+    │   ├── __init__.py
+    │   ├── data/
+    │   │   ├── __init__.py
+    │   │   └── data_loader.py
+    │   ├── optimization/
+    │   │   ├── __init__.py
+    │   │   ├── markowitz.py
+    │   │   └── utility.py
+    │   ├── analysis/
+    │   │   ├── __init__.py
+    │   │   ├── error_simulation.py
+    │   │   └── performance.py
+    │   └── visualization/
+    │       ├── __init__.py
+    │       └── plots.py
+    ├── data/
+    │   ├── raw/
+    │   └── processed/
+    ├── requirements.txt
+    └── README.md

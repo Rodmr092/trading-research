@@ -55,7 +55,7 @@ class PortfolioOptimizer:
         if not 0 < max_weight <= 1:
             raise ValueError("max_weight must be between 0 and 1")
             
-        self.risk_tolerance = risk_tolerance
+        self.risk_tolerance = risk_tolerance / 100.0  # Normalizar a escala decimal
         self.max_weight = max_weight
         self.n_assets = None
         
@@ -63,7 +63,6 @@ class PortfolioOptimizer:
                          weights: np.ndarray, 
                          params: PortfolioParameters,
                          risk_tolerance: Optional[float] = None) -> float:
-        
         """
         Calculate utility for given weights and parameters.
         U(w) = E[R] - (1/2λ)σ²
@@ -81,10 +80,10 @@ class PortfolioOptimizer:
         expected_return = np.dot(weights, params.expected_returns)
         portfolio_variance = np.dot(weights, np.dot(params.covariance_matrix, weights))
         
-        # Escalar el riesgo para hacerlo más comparable con el retorno
+        # Usar risk_tolerance normalizado
         risk_penalty = (1 / (2 * rt)) * portfolio_variance
         
-        return expected_return - risk_penalty
+        return expected_return - risk_penalty    
     
     def _optimization_objective(self, 
                               weights: np.ndarray, 
@@ -93,10 +92,6 @@ class PortfolioOptimizer:
         return -self._calculate_utility(weights, params)
     
     def optimize(self, params: PortfolioParameters, initial_weights: Optional[np.ndarray] = None) -> np.ndarray:
-        params.validate()
-        self.n_assets = len(params.expected_returns)  # Mover esto al inicio
-        start_time = time.perf_counter()
-        logger.info(f"Starting optimization for {self.n_assets} assets")
         """
         Find optimal portfolio weights by maximizing utility with diversification constraints.
         
@@ -111,6 +106,11 @@ class PortfolioOptimizer:
             ValueError: If optimization fails to converge after all attempts
         """
         params.validate()
+        self.n_assets = len(params.expected_returns)
+        start_time = time.perf_counter()
+        
+        # Reduced logging
+        logger.debug(f"Starting optimization")
         
         # Constraints for all optimization attempts
         constraints = [
@@ -156,7 +156,7 @@ class PortfolioOptimizer:
             
             # 3. Random weights (varios intentos)
             np.random.seed(42)  # Para reproducibilidad
-            for _ in range(3):
+            for _ in range(5):
                 weights = np.random.dirichlet(np.ones(self.n_assets))
                 # Ajustar para respetar max_weight
                 if np.any(weights > self.max_weight):
@@ -180,8 +180,9 @@ class PortfolioOptimizer:
                 {'ftol': 1e-6, 'maxiter': 5000},   # Relajado
             ]
             
-            for init_point in initial_points:
-                for config in optimization_configs:
+            # Intentar optimización con diferentes puntos iniciales y configuraciones
+            for i, init_point in enumerate(initial_points):
+                for j, config in enumerate(optimization_configs):
                     try:
                         result = minimize(
                             self._optimization_objective,
@@ -193,7 +194,6 @@ class PortfolioOptimizer:
                             options={**config, 'disp': False}
                         )
                         
-                        # Evaluar la solución solo si la optimización convergió
                         if result.success:
                             utility = evaluate_solution(result.x)
                             if utility > best_utility:
@@ -201,7 +201,7 @@ class PortfolioOptimizer:
                                 best_result = result
                                 
                     except Exception as e:
-                        logger.warning(f"Optimization attempt failed: {str(e)}")
+                        logger.debug(f"Optimization attempt {i}-{j} failed: {str(e)}")
                         continue
             
             if best_result is None:
@@ -209,7 +209,7 @@ class PortfolioOptimizer:
             
             # Clean up small weights and renormalize
             weights = best_result.x.copy()
-            weights[weights < 1e-4] = 0
+            weights[weights < 1e-5] = 0
             
             if np.sum(weights) > 0:
                 weights = weights / np.sum(weights)
@@ -225,37 +225,19 @@ class PortfolioOptimizer:
                 logger.warning("Optimization result worse than equal weights. Using equal weights.")
                 weights = np.ones(self.n_assets) / self.n_assets
             
+            # Log de métricas adicionales solo en 10% de los casos
+            if np.random.random() < 0.1:
+                exp_return = np.dot(weights, params.expected_returns)
+                volatility = np.sqrt(weights @ params.covariance_matrix @ weights)
+                active_positions = np.sum(weights > 0.01)
+                logger.info(f"Optimization metrics - Return: {exp_return:.4f}, Risk: {volatility:.4f}, "
+                        f"Active: {active_positions}")
+            
             return weights
                 
         except Exception as e:
             logger.error(f"Optimization error: {str(e)}")
             raise
-        for i, init_point in enumerate(initial_points):
-            for j, config in enumerate(optimization_configs):
-                try:
-                    iter_start = time.perf_counter()
-                    result = minimize(
-                        self._optimization_objective,
-                        init_point,
-                        args=(params,),
-                        method='SLSQP',
-                        bounds=bounds,
-                        constraints=constraints,
-                        options={**config, 'disp': False}
-                    )
-                    
-                    if result.success:
-                        utility = evaluate_solution(result.x)
-                        logger.debug(f"Attempt {i}-{j} succeeded: utility={utility:.6f}, "
-                                f"time={time.perf_counter()-iter_start:.2f}s")
-                        if utility > best_utility:
-                            best_utility = utility
-                            best_result = result
-                            
-                except Exception as e:
-                    logger.warning(f"Optimization attempt {i}-{j} failed: {str(e)}")
-        
-        logger.info(f"Optimization completed in {time.perf_counter()-start_time:.2f}s")
 
     def calculate_cash_equivalent(self,
                                 weights: np.ndarray,
@@ -268,25 +250,27 @@ class PortfolioOptimizer:
             weights: Portfolio weights
             params: Portfolio parameters
             risk_tolerance: Optional override for instance risk_tolerance
-            
+                Note: This should be in the original scale (will be normalized internally)
+                
         Returns:
             Cash equivalent value
         """
-        rt = risk_tolerance if risk_tolerance is not None else self.risk_tolerance
+        # Si se proporciona risk_tolerance, normalizarlo como en el constructor
+        rt = (risk_tolerance / 100.0) if risk_tolerance is not None else self.risk_tolerance
         
         # Calculate expected return and variance
         exp_return = np.dot(weights, params.expected_returns)
         variance = weights @ params.covariance_matrix @ weights
         
-        # Calculate utility
+        # Calculate utility usando rt ya normalizado
         utility = exp_return - (1 / (2 * rt)) * variance
         return utility
-        
+    
     def calculate_cel(self,
-                    optimal_weights: np.ndarray,
-                    suboptimal_weights: np.ndarray,
-                    true_params: PortfolioParameters,
-                    risk_tolerance: Optional[float] = None) -> float:
+                     optimal_weights: np.ndarray,
+                     suboptimal_weights: np.ndarray,
+                     true_params: PortfolioParameters,
+                     risk_tolerance: Optional[float] = None) -> float:
         """
         Calculate Cash Equivalent Loss between optimal and suboptimal portfolios.
         
@@ -298,9 +282,6 @@ class PortfolioOptimizer:
             
         Returns:
             Relative Cash Equivalent Loss
-            
-        Raises:
-            ValueError: If CE₀ too close to zero or if optimal weights give lower utility
         """
         rt = risk_tolerance if risk_tolerance is not None else self.risk_tolerance
         
@@ -320,8 +301,8 @@ class PortfolioOptimizer:
                 "to calculate CEL reliably"
             )
         
-        # Verificación de optimalidad con tolerancia numérica
-        if ce_optimal < ce_suboptimal - 1e-10:
+        # Verificación de optimalidad con tolerancia numérica ajustada
+        if ce_optimal < ce_suboptimal - 1e-8:
             logger.warning(
                 f"Suboptimal weights gave higher utility (diff: {ce_suboptimal - ce_optimal:.2e}). "
                 "Using absolute difference for CEL calculation."
@@ -330,7 +311,8 @@ class PortfolioOptimizer:
         # Calcular CEL relativo usando valor absoluto del CE óptimo
         cel = (ce_optimal - ce_suboptimal) / abs(ce_optimal)
         
-        return max(0, cel)  # CEL no debería ser negativo
+        # Ignorar CELs muy pequeños
+        return max(0, cel) if cel > 1e-4 else 0
 
 
 def create_base_portfolio(expected_returns: np.ndarray,

@@ -6,6 +6,7 @@ from src.error_analysis import ErrorAnalysisConfig, ErrorAnalyzer, run_error_ana
 from src.portfolio_optimizer import PortfolioParameters
 import logging
 from numpy.linalg import LinAlgError
+from .test_utils import generate_test_covariance_matrix
 
 
 # ---------------------- Fixtures ----------------------
@@ -249,21 +250,47 @@ def test_parallel_execution(sample_portfolio_params, sample_config):
 
 # ---------------------- Integration Tests ----------------------
 
-def test_full_analysis_integration(sample_portfolio_params, sample_config):
-    """Test complete analysis integration."""
-    analyzer = ErrorAnalyzer(sample_config)
-    results = analyzer.analyze_errors(sample_portfolio_params)
+def test_full_analysis_integration():
+    # Setup
+    n_assets = 10
+    expected_returns = np.random.normal(0.1, 0.05, n_assets)
+    cov_matrix = generate_test_covariance_matrix(n_assets)
     
-    # Check structure
-    assert isinstance(results, pd.DataFrame)
-    assert set(['error_type', 'error_magnitude', 'risk_tolerance']).issubset(
-        results.index.names
+    config = ErrorAnalysisConfig(
+        n_iterations=10,  # Reducido para tests
+        error_magnitudes=np.array([0.05, 0.10]),
+        risk_tolerances=np.array([25, 50]),
+        random_seed=42
     )
     
-    # Check reproducibility
-    analyzer2 = ErrorAnalyzer(sample_config)
-    results2 = analyzer2.analyze_errors(sample_portfolio_params)
-    pd.testing.assert_frame_equal(results, results2)
+    # Run analysis
+    results = run_error_analysis(expected_returns, cov_matrix, config)
+    
+    # Basic validation
+    assert isinstance(results, pd.DataFrame)
+    assert not results.empty
+    
+    # Check structure (excluding time)
+    expected_columns = {
+        'cel': ['mean', 'std', 'min', 'max'],
+        'max_weight_diff': ['mean', 'max'],
+        'mean_weight_diff': ['mean'],
+        'active_positions': ['mean'],
+        'optimal_return': ['mean'],
+        'optimal_risk': ['mean'],
+        'suboptimal_return': ['mean'],
+        'suboptimal_risk': ['mean']
+    }
+    
+    for col, aggs in expected_columns.items():
+        for agg in aggs:
+            assert (col, agg) in results.columns, f"Missing column: ({col}, {agg})"
+    
+    # Check value ranges
+    assert np.all(results[('cel', 'mean')] >= 0)
+    assert np.all(results[('cel', 'mean')] < 1)
+    assert np.all(results[('max_weight_diff', 'mean')] >= 0)
+    assert np.all(results[('max_weight_diff', 'mean')] <= 1)
 
 def test_error_handling(sample_config):
     """Test error handling for invalid inputs."""

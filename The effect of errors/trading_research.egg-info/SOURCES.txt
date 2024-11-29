@@ -4,10 +4,15 @@ src/data_management.py
 src/error_analysis.py
 src/error_analysis_test.py
 src/portfolio_optimizer.py
+src/visualization.py
 tests/__init__.py
+tests/temp_test_error.py
 tests/test_data_management.py
 tests/test_error_analysis.py
+tests/test_error_handling.py
 tests/test_portfolio_optimizer.py
+tests/test_utils.py
+tests/test_visualization.py
 trading_research.egg-info/PKG-INFO
 trading_research.egg-info/SOURCES.txt
 trading_research.egg-info/dependency_links.txt

@@ -8,5 +8,7 @@ setup(
         'numpy',
         'pandas',
         'pytest',
+        'matplotlib',
+        'seaborn',
     ]
 )

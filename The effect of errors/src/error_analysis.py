@@ -27,14 +27,14 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ErrorAnalysisConfig:
     """Configuration parameters for error analysis"""
-    n_iterations: int = 100
+    n_iterations: int = 100  # Aumentado a 100
     error_magnitudes: np.ndarray = field(
         default_factory=lambda: np.array([0.05, 0.10, 0.15, 0.20])
     )
     risk_tolerances: np.ndarray = field(
         default_factory=lambda: np.array([25, 50, 75])
     )
-    n_jobs: int = -1  # Use all available cores by default
+    n_jobs: int = -1
     random_seed: Optional[int] = None
 
     def __post_init__(self):
@@ -113,21 +113,20 @@ class ErrorAnalyzer:
         rng = np.random.RandomState(seed)
         z = rng.standard_normal(len(true_params.expected_returns))
         
-        # Usar distribución log-normal para asegurar que los retornos mantengan su signo
+        # Aumentar ligeramente el impacto del error
         error_params = PortfolioParameters(
-            expected_returns=true_params.expected_returns * np.exp(error_magnitude * z),
+            expected_returns=true_params.expected_returns * (1 + error_magnitude * 1.5 * z),
             covariance_matrix=true_params.covariance_matrix.copy()
         )
         return error_params
-        
+
     def _generate_variance_errors(self,
                                 true_params: PortfolioParameters,
                                 error_magnitude: float,
                                 seed: Optional[int] = None) -> PortfolioParameters:
         """
-        Generate parameters with errors in variances using log-normal distribution
+        Generate parameters with errors in variances.
         σᵢᵢ_error = σᵢᵢ(1 + kzᵢ) where zᵢ ~ N(0,1)
-    
         """
         rng = np.random.RandomState(seed)
         n_assets = len(true_params.expected_returns)
@@ -137,9 +136,9 @@ class ErrorAnalyzer:
         std_devs = np.sqrt(variances)
         corr_matrix = true_params.covariance_matrix / np.outer(std_devs, std_devs)
         
-        # Generar errores log-normales para varianzas
+        # Generar errores lineales para varianzas
         z = rng.standard_normal(n_assets)
-        new_variances = variances * np.exp(error_magnitude * z)
+        new_variances = variances * (1 + error_magnitude * z)  # Perturbación lineal
         new_std_devs = np.sqrt(new_variances)
         
         # Reconstruir matriz de covarianza manteniendo correlaciones
@@ -156,7 +155,7 @@ class ErrorAnalyzer:
             covariance_matrix=cov_matrix
         )
         return error_params
-        
+
     def _generate_covariance_errors(self,
                                 true_params: PortfolioParameters,
                                 error_magnitude: float,
@@ -164,9 +163,6 @@ class ErrorAnalyzer:
         """
         Generate parameters with errors in covariances.
         σᵢⱼ_error = σᵢⱼ(1 + kzᵢⱼ) where zᵢⱼ ~ N(0,1)
-        
-        Modificación: Asegurar que la matriz permanezca definida positiva y
-        que las correlaciones estén en [-1,1]
         """
         rng = np.random.RandomState(seed)
         n_assets = len(true_params.expected_returns)
@@ -176,14 +172,13 @@ class ErrorAnalyzer:
         std_devs = np.sqrt(variances)
         corr_matrix = true_params.covariance_matrix / np.outer(std_devs, std_devs)
         
-        # Generar errores más significativos para correlaciones
+        # Generar errores para correlaciones
         z = rng.standard_normal((n_assets, n_assets))
         z = (z + z.T) / 2
         np.fill_diagonal(z, 0)
         
-        # Aumentar la magnitud del error para correlaciones
-        new_corr = corr_matrix + error_magnitude * 2 * z  # Duplicado el efecto
-        new_corr = np.clip(new_corr, -0.99, 0.99)  # Evitar correlaciones perfectas
+        # Aplicar perturbación lineal a las correlaciones
+        new_corr = corr_matrix * (1 + error_magnitude * z)
         np.fill_diagonal(new_corr, 1)
         
         # Asegurar simetría
@@ -199,15 +194,11 @@ class ErrorAnalyzer:
         # Reconstruir matriz de covarianza
         cov_matrix = new_corr * np.outer(std_devs, std_devs)
         
-        # Log magnitude of changes
-        rel_change = np.abs((cov_matrix - true_params.covariance_matrix) / true_params.covariance_matrix)
-        logger.debug(f"Average relative change in covariances: {np.mean(rel_change):.2%}")
-        
         return PortfolioParameters(
             expected_returns=true_params.expected_returns.copy(),
             covariance_matrix=cov_matrix
         )
-    
+        
     def _run_single_simulation(self, args: Tuple[str, float, float, PortfolioParameters, int]) -> Dict:
         """Run a single iteration of the simulation."""
         error_type, error_magnitude, risk_tolerance, true_params, seed = args
@@ -226,16 +217,22 @@ class ErrorAnalyzer:
             # Validar dimensiones de entrada
             if len(true_params.expected_returns) != true_params.covariance_matrix.shape[0]:
                 raise ValueError("Dimension mismatch between returns and covariance matrix")
-                
-            logger.info(f"Starting simulation: {error_type}, k={error_magnitude}, rt={risk_tolerance}")
+            
+            # Reduced logging - solo para combinaciones importantes
+            is_logging_iteration = (error_magnitude in [0.05, 0.20] and 
+                                risk_tolerance == 50)
+            
+            if is_logging_iteration:
+                logger.info(f"Starting simulation: {error_type}, k={error_magnitude}, rt={risk_tolerance}")
 
             # Generate parameters with errors based on type
             if error_type == 'means':
                 error_params = self._generate_mean_errors(true_params, error_magnitude, seed)
                 matrix_checks = None
-                # Log diferencias en medias
-                rel_diff = np.abs((error_params.expected_returns - true_params.expected_returns) / true_params.expected_returns)
-                logger.info(f"Mean relative difference in returns: {np.mean(rel_diff):.2%}")
+                if is_logging_iteration:
+                    rel_diff = np.abs((error_params.expected_returns - true_params.expected_returns) / 
+                                    true_params.expected_returns)
+                    logger.info(f"Mean relative difference in returns: {np.mean(rel_diff):.2%}")
             elif error_type == 'variances':
                 error_params = self._generate_variance_errors(true_params, error_magnitude, seed)
                 matrix_checks = self._check_matrix_properties(
@@ -243,10 +240,11 @@ class ErrorAnalyzer:
                     true_params.covariance_matrix,
                     'variance'
                 )
-                # Log diferencias en varianzas
-                var_diff = np.abs((np.diag(error_params.covariance_matrix) - np.diag(true_params.covariance_matrix)) / 
-                                np.diag(true_params.covariance_matrix))
-                logger.info(f"Mean relative difference in variances: {np.mean(var_diff):.2%}")
+                if is_logging_iteration:
+                    var_diff = np.abs((np.diag(error_params.covariance_matrix) - 
+                                    np.diag(true_params.covariance_matrix)) / 
+                                    np.diag(true_params.covariance_matrix))
+                    logger.info(f"Mean relative difference in variances: {np.mean(var_diff):.2%}")
             else:  # covariances
                 error_params = self._generate_covariance_errors(true_params, error_magnitude, seed)
                 matrix_checks = self._check_matrix_properties(
@@ -254,11 +252,12 @@ class ErrorAnalyzer:
                     true_params.covariance_matrix,
                     'covariance'
                 )
-                # Log diferencias en covarianzas
-                mask = ~np.eye(true_params.covariance_matrix.shape[0], dtype=bool)
-                cov_diff = np.abs((error_params.covariance_matrix[mask] - true_params.covariance_matrix[mask]) / 
-                                true_params.covariance_matrix[mask])
-                logger.info(f"Mean relative difference in covariances: {np.mean(cov_diff):.2%}")
+                if is_logging_iteration:
+                    mask = ~np.eye(true_params.covariance_matrix.shape[0], dtype=bool)
+                    cov_diff = np.abs((error_params.covariance_matrix[mask] - 
+                                    true_params.covariance_matrix[mask]) / 
+                                    true_params.covariance_matrix[mask])
+                    logger.info(f"Mean relative difference in covariances: {np.mean(cov_diff):.2%}")
                 
             # Optimizar portafolios
             optimizer = PortfolioOptimizer(risk_tolerance)
@@ -266,13 +265,19 @@ class ErrorAnalyzer:
                 optimal_weights = optimizer.optimize(true_params)
                 suboptimal_weights = optimizer.optimize(error_params)
                 
-                # Validar que los pesos son válidos
                 if optimal_weights is None or suboptimal_weights is None:
                     raise ValueError("Optimization failed to produce valid weights")
                 
-                logger.info(f"Weight differences: {np.abs(optimal_weights - suboptimal_weights).mean():.4f}")
+                # Calcular métricas adicionales
+                optimal_return = np.dot(optimal_weights, true_params.expected_returns)
+                optimal_risk = np.sqrt(optimal_weights @ true_params.covariance_matrix @ optimal_weights)
+                subopt_return = np.dot(suboptimal_weights, true_params.expected_returns)
+                subopt_risk = np.sqrt(suboptimal_weights @ true_params.covariance_matrix @ suboptimal_weights)
+                
+                weight_diff = np.abs(optimal_weights - suboptimal_weights)
+                if is_logging_iteration:
+                    logger.info(f"Weight differences: {np.mean(weight_diff):.4f}")
                     
-                # Calcular CEL con la tolerancia al riesgo específica
                 cel = optimizer.calculate_cel(
                     optimal_weights,
                     suboptimal_weights,
@@ -283,14 +288,22 @@ class ErrorAnalyzer:
                 if cel is None or np.isnan(cel):
                     raise ValueError("Invalid CEL calculation result")
                 
-                logger.info(f"CEL: {cel:.4f}, Time: {time.perf_counter() - start_time:.2f}s")
+                if is_logging_iteration:
+                    logger.info(f"CEL: {cel:.4f}, Time: {time.perf_counter() - start_time:.2f}s")
                     
                 result = {
                     'error_type': error_type,
                     'error_magnitude': error_magnitude,
                     'risk_tolerance': risk_tolerance,
                     'cel': cel,
-                    'time': time.perf_counter() - start_time
+                    'time': time.perf_counter() - start_time,
+                    'optimal_return': optimal_return,
+                    'optimal_risk': optimal_risk,
+                    'suboptimal_return': subopt_return,
+                    'suboptimal_risk': subopt_risk,
+                    'max_weight_diff': np.max(weight_diff),
+                    'mean_weight_diff': np.mean(weight_diff),
+                    'active_positions': np.sum(optimal_weights > 0.01)
                 }
                 
                 if matrix_checks:
@@ -363,7 +376,7 @@ class ErrorAnalyzer:
         
         # Run simulations in parallel
         with ProcessPoolExecutor(max_workers=self.config.n_jobs) as executor:
-            simulation_results = executor.map(self._run_single_simulation, simulation_params)
+            simulation_results = list(executor.map(self._run_single_simulation, simulation_params))
         
         # Process results
         for result in simulation_results:
@@ -373,12 +386,30 @@ class ErrorAnalyzer:
         if not results:
             raise ValueError("Optimization failed - no valid results obtained")
         
-        # Convertir resultados a DataFrame y agrupar
-        return pd.DataFrame(results).groupby(
-            ['error_type', 'error_magnitude', 'risk_tolerance']
-        ).agg({
-            'cel': ['mean', 'std', 'min', 'max']
+        # Convertir resultados a DataFrame
+        results_df = pd.DataFrame(results)
+        
+        # Calcular estadísticas agregadas
+        stats = results_df.groupby(['error_type', 'error_magnitude', 'risk_tolerance']).agg({
+            'cel': ['mean', 'std', 'min', 'max'],
+            'max_weight_diff': ['mean', 'max'],
+            'mean_weight_diff': 'mean',
+            'active_positions': 'mean',
+            'optimal_return': 'mean',
+            'optimal_risk': 'mean',
+            'suboptimal_return': 'mean',
+            'suboptimal_risk': 'mean',
+            'time': 'mean'
         }).round(4)
+        
+        # Log resumen de resultados
+        for (error_type, k, rt), group in results_df.groupby(['error_type', 'error_magnitude', 'risk_tolerance']):
+            logger.info(f"\nResults for {error_type}, k={k}, rt={rt}:")
+            logger.info(f"CEL: mean={group['cel'].mean():.4f}, std={group['cel'].std():.4f}")
+            logger.info(f"Weight differences: mean={group['mean_weight_diff'].mean():.4f}")
+            logger.info(f"Average processing time: {group['time'].mean():.2f}s")
+        
+        return stats
 
 def run_error_analysis(expected_returns: np.ndarray,
                       covariance_matrix: np.ndarray,

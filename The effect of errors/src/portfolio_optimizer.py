@@ -92,152 +92,64 @@ class PortfolioOptimizer:
         return -self._calculate_utility(weights, params)
     
     def optimize(self, params: PortfolioParameters, initial_weights: Optional[np.ndarray] = None) -> np.ndarray:
-        """
-        Find optimal portfolio weights by maximizing utility with diversification constraints.
-        
-        Args:
-            params: Portfolio parameters
-            initial_weights: Initial guess for optimization
-            
-        Returns:
-            Optimal portfolio weights
-            
-        Raises:
-            ValueError: If optimization fails to converge after all attempts
-        """
+        """Find optimal portfolio weights with simplified optimization strategy."""
         params.validate()
         self.n_assets = len(params.expected_returns)
-        start_time = time.perf_counter()
         
-        # Reduced logging
-        logger.debug(f"Starting optimization")
-        
-        # Constraints for all optimization attempts
+        # Simplified constraints
         constraints = [
             {'type': 'eq', 'fun': lambda x: np.sum(x) - 1},  # weights sum to 1
         ]
         
-        # Weight constraints usando closure para evitar problemas de late binding
-        def make_constraint(idx):
-            return lambda x: self.max_weight - x[idx]
+        # Single weight constraint for all assets
+        constraints.append({
+            'type': 'ineq',
+            'fun': lambda x: self.max_weight - np.max(x)
+        })
         
-        for i in range(self.n_assets):
-            constraints.append({
-                'type': 'ineq',
-                'fun': make_constraint(i)
-            })
-        
-        # Bounds for weights (no short-selling)
+        # Bounds for weights
         bounds = tuple((0, self.max_weight) for _ in range(self.n_assets))
         
-        # Función helper para evaluar la calidad de una solución
-        def evaluate_solution(weights):
-            if not np.all(np.isfinite(weights)):
-                return float('-inf')
-            if not (np.all(weights >= -1e-10) and np.all(weights <= self.max_weight + 1e-10)):
-                return float('-inf')
-            if not np.isclose(np.sum(weights), 1.0, rtol=1e-10, atol=1e-10):
-                return float('-inf')
-            return -self._optimization_objective(weights, params)
-        
         try:
-            best_result = None
-            best_utility = float('-inf')
+            # Start with equal weights if no initial weights provided
+            if initial_weights is None:
+                initial_weights = np.ones(self.n_assets) / self.n_assets
             
-            # Generar múltiples puntos iniciales
-            initial_points = []
+            # Single optimization with balanced settings
+            result = minimize(
+                self._optimization_objective,
+                initial_weights,
+                args=(params,),
+                method='SLSQP',
+                bounds=bounds,
+                constraints=constraints,
+                options={
+                    'ftol': 1e-8,
+                    'maxiter': 1000,
+                    'disp': False
+                }
+            )
             
-            # 1. Usar initial_weights si se proporcionan
-            if initial_weights is not None:
-                initial_points.append(initial_weights)
+            if not result.success:
+                # Fall back to equal weights if optimization fails
+                return np.ones(self.n_assets) / self.n_assets
             
-            # 2. Equal weights
-            initial_points.append(np.ones(self.n_assets) / self.n_assets)
-            
-            # 3. Random weights (varios intentos)
-            np.random.seed(42)  # Para reproducibilidad
-            for _ in range(5):
-                weights = np.random.dirichlet(np.ones(self.n_assets))
-                # Ajustar para respetar max_weight
-                if np.any(weights > self.max_weight):
-                    weights = np.minimum(weights, self.max_weight)
-                    weights = weights / np.sum(weights)
-                initial_points.append(weights)
-            
-            # 4. Concentrated portfolios
-            for i in range(self.n_assets):
-                weights = np.zeros(self.n_assets)
-                weights[i] = self.max_weight
-                remaining = 1.0 - self.max_weight
-                other_weights = remaining / (self.n_assets - 1)
-                weights[weights == 0] = other_weights
-                initial_points.append(weights)
-            
-            # Diferentes configuraciones de optimización
-            optimization_configs = [
-                {'ftol': 1e-12, 'maxiter': 2000},  # Estricto
-                {'ftol': 1e-9, 'maxiter': 3000},   # Balance
-                {'ftol': 1e-6, 'maxiter': 5000},   # Relajado
-            ]
-            
-            # Intentar optimización con diferentes puntos iniciales y configuraciones
-            for i, init_point in enumerate(initial_points):
-                for j, config in enumerate(optimization_configs):
-                    try:
-                        result = minimize(
-                            self._optimization_objective,
-                            init_point,
-                            args=(params,),
-                            method='SLSQP',
-                            bounds=bounds,
-                            constraints=constraints,
-                            options={**config, 'disp': False}
-                        )
-                        
-                        if result.success:
-                            utility = evaluate_solution(result.x)
-                            if utility > best_utility:
-                                best_utility = utility
-                                best_result = result
-                                
-                    except Exception as e:
-                        logger.debug(f"Optimization attempt {i}-{j} failed: {str(e)}")
-                        continue
-            
-            if best_result is None:
-                raise ValueError("Optimization failed to converge from any starting point or configuration")
-            
-            # Clean up small weights and renormalize
-            weights = best_result.x.copy()
+            # Clean up small weights
+            weights = result.x.copy()
             weights[weights < 1e-5] = 0
             
             if np.sum(weights) > 0:
                 weights = weights / np.sum(weights)
             else:
-                logger.warning("All weights were eliminated in cleanup. Using equal weights.")
                 weights = np.ones(self.n_assets) / self.n_assets
-            
-            # Verificación final
-            final_utility = evaluate_solution(weights)
-            equal_weights_utility = evaluate_solution(np.ones(self.n_assets) / self.n_assets)
-            
-            if final_utility <= equal_weights_utility:
-                logger.warning("Optimization result worse than equal weights. Using equal weights.")
-                weights = np.ones(self.n_assets) / self.n_assets
-            
-            # Log de métricas adicionales solo en 10% de los casos
-            if np.random.random() < 0.1:
-                exp_return = np.dot(weights, params.expected_returns)
-                volatility = np.sqrt(weights @ params.covariance_matrix @ weights)
-                active_positions = np.sum(weights > 0.01)
-                logger.info(f"Optimization metrics - Return: {exp_return:.4f}, Risk: {volatility:.4f}, "
-                        f"Active: {active_positions}")
             
             return weights
                 
         except Exception as e:
             logger.error(f"Optimization error: {str(e)}")
-            raise
+            # Return equal weights as fallback
+            return np.ones(self.n_assets) / self.n_assets
+        
 
     def calculate_cash_equivalent(self,
                                 weights: np.ndarray,

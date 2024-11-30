@@ -1,15 +1,12 @@
 """Test suite for visualization.py module"""
 
-import os
-import sys
 import pytest
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
-import shutil
-from typing import Optional, Dict, List, Tuple, Union
-
+from PIL import Image
+import logging
 
 from src.visualization import PortfolioVisualizer, plot_correlation_matrix
 
@@ -20,28 +17,52 @@ def setup_matplotlib():
 
 @pytest.fixture
 def sample_results_df():
-    """Create sample results DataFrame for testing."""
+    """Create sample results DataFrame with real-world structure."""
+    # Crear índice multinivel
     index = pd.MultiIndex.from_product([
-        ['means', 'variances', 'covariances'],
-        [0.05, 0.10, 0.15],
-        [25, 50, 75]
+        ['means', 'variances', 'covariances'],  # error_type
+        [0.05, 0.20],                          # error_magnitude
+        [25, 75]                               # risk_tolerance
     ], names=['error_type', 'error_magnitude', 'risk_tolerance'])
     
+    # Crear columnas multinivel
+    columns = pd.MultiIndex.from_tuples([
+        ('cel', 'mean'),
+        ('cel', 'std'),
+        ('cel', 'min'),
+        ('cel', 'max'),
+        ('max_weight_diff', 'mean'),
+        ('max_weight_diff', 'max'),
+        ('mean_weight_diff', 'mean'),
+        ('active_positions', 'mean')
+    ])
+    
+    # Generar datos de ejemplo con valores realistas
     np.random.seed(42)
+    n_samples = len(index)
     
-    # Crear datos con estructura correcta
-    data = {
-        ('cel', 'mean'): np.random.uniform(0, 0.2, len(index)),
-        ('cel', 'std'): np.random.uniform(0, 0.05, len(index)),
-        'mean_weight_diff': np.random.uniform(0, 0.1, len(index)),
-        'optimal_risk': np.random.uniform(0.1, 0.3, len(index)),
-        'optimal_return': np.random.uniform(0.05, 0.15, len(index)),
-        'suboptimal_risk': np.random.uniform(0.1, 0.3, len(index)),
-        'suboptimal_return': np.random.uniform(0.05, 0.15, len(index))
-    }
+    data = np.random.uniform(low=[
+        0.001,  # cel mean
+        0.0005, # cel std
+        0.0,    # cel min
+        0.005,  # cel max
+        0.01,   # max_weight_diff mean
+        0.02,   # max_weight_diff max
+        0.005,  # mean_weight_diff mean
+        3       # active_positions mean
+    ], high=[
+        0.02,   # cel mean
+        0.005,  # cel std
+        0.01,   # cel min
+        0.05,   # cel max
+        0.2,    # max_weight_diff mean
+        0.3,    # max_weight_diff max
+        0.1,    # mean_weight_diff mean
+        6       # active_positions mean
+    ], size=(n_samples, len(columns)))
     
-    # Convertir a DataFrame con MultiIndex en columnas para 'cel'
-    df = pd.DataFrame(data, index=index)
+    # Crear DataFrame con estructura correcta
+    df = pd.DataFrame(data, index=index, columns=columns)
     return df
 
 @pytest.fixture
@@ -67,8 +88,17 @@ def test_plot_cel_heatmap(visualizer, sample_results_df, temp_output_dir):
     """Test CEL heatmap generation."""
     output_path = temp_output_dir / "cel_heatmap.png"
     
-    visualizer.plot_cel_heatmap(sample_results_df, str(output_path))
-    assert output_path.exists()
+    try:
+        visualizer.plot_cel_heatmap(sample_results_df, str(output_path))
+        assert output_path.exists(), "Heatmap file not generated"
+        assert output_path.stat().st_size > 0, "Heatmap file is empty"
+        
+        # Verificar que la imagen sea válida
+        with Image.open(output_path) as img:
+            assert img.size[0] > 0 and img.size[1] > 0
+            
+    except Exception as e:
+        pytest.fail(f"Failed to generate CEL heatmap: {str(e)}")
     
     plt.close('all')
 
@@ -76,8 +106,16 @@ def test_plot_cel_boxplots(visualizer, sample_results_df, temp_output_dir):
     """Test CEL boxplot generation."""
     output_path = temp_output_dir / "cel_boxplots.png"
     
-    visualizer.plot_cel_boxplots(sample_results_df, str(output_path))
-    assert output_path.exists()
+    try:
+        visualizer.plot_cel_boxplots(sample_results_df, str(output_path))
+        assert output_path.exists(), "Boxplot file not generated"
+        assert output_path.stat().st_size > 0, "Boxplot file is empty"
+        
+        with Image.open(output_path) as img:
+            assert img.size[0] > 0 and img.size[1] > 0
+            
+    except Exception as e:
+        pytest.fail(f"Failed to generate CEL boxplots: {str(e)}")
     
     plt.close('all')
 
@@ -85,17 +123,16 @@ def test_plot_weight_differences(visualizer, sample_results_df, temp_output_dir)
     """Test weight differences plot generation."""
     output_path = temp_output_dir / "weight_differences.png"
     
-    visualizer.plot_weight_differences(sample_results_df, str(output_path))
-    assert output_path.exists()
-    
-    plt.close('all')
-
-def test_plot_risk_return_scatter(visualizer, sample_results_df, temp_output_dir):
-    """Test risk-return scatter plot generation."""
-    output_path = temp_output_dir / "risk_return.png"
-    
-    visualizer.plot_risk_return_scatter(sample_results_df, str(output_path))
-    assert output_path.exists()
+    try:
+        visualizer.plot_weight_differences(sample_results_df, str(output_path))
+        assert output_path.exists(), "Weight differences plot not generated"
+        assert output_path.stat().st_size > 0, "Weight differences plot is empty"
+        
+        with Image.open(output_path) as img:
+            assert img.size[0] > 0 and img.size[1] > 0
+            
+    except Exception as e:
+        pytest.fail(f"Failed to generate weight differences plot: {str(e)}")
     
     plt.close('all')
 
@@ -104,61 +141,47 @@ def test_plot_cel_confidence_bands(visualizer, sample_results_df, temp_output_di
     output_path = temp_output_dir / "cel_confidence.png"
     
     try:
-        visualizer.plot_cel_confidence_bands(sample_results_df, save_path=str(output_path))
-        assert output_path.exists()
+        visualizer.plot_cel_confidence_bands(sample_results_df, str(output_path))
+        assert output_path.exists(), "Confidence bands plot not generated"
+        assert output_path.stat().st_size > 0, "Confidence bands plot is empty"
+        
+        with Image.open(output_path) as img:
+            assert img.size[0] > 0 and img.size[1] > 0
+            
     except Exception as e:
         pytest.fail(f"Failed to generate confidence bands plot: {str(e)}")
     
     plt.close('all')
-    
-def test_plot_cel_confidence_bands_data_structure(visualizer, sample_results_df, temp_output_dir):
-    """Test data structure for confidence bands plot."""
-    # Verificar estructura del DataFrame
-    assert isinstance(sample_results_df.index, pd.MultiIndex)
-    assert all(name in sample_results_df.index.names 
-              for name in ['error_type', 'error_magnitude', 'risk_tolerance'])
-    
-    # Verificar columnas necesarias
-    assert ('cel', 'mean') in sample_results_df.columns
-    assert ('cel', 'std') in sample_results_df.columns
-    
-    # Verificar tipos de error
-    error_types = sample_results_df.index.get_level_values('error_type').unique()
-    assert all(et in error_types for et in ['means', 'variances', 'covariances'])
-    
-    # Intentar generar el plot
-    output_path = temp_output_dir / "test_confidence.png"
-    visualizer.plot_cel_confidence_bands(sample_results_df, save_path=str(output_path))
-    
-    assert output_path.exists(), "Confidence bands plot was not generated"
-    assert output_path.stat().st_size > 0, "Confidence bands plot file is empty"
 
 def test_create_analysis_dashboard(visualizer, sample_results_df, temp_output_dir):
     """Test complete dashboard generation."""
     try:
         visualizer.create_analysis_dashboard(sample_results_df, str(temp_output_dir))
+        
+        expected_files = {
+            'cel_heatmap.png',
+            'cel_boxplots.png',
+            'weight_differences.png',
+            'cel_confidence.png'
+        }
+        
+        # Verificar cada archivo
+        for file in expected_files:
+            file_path = temp_output_dir / file
+            assert file_path.exists(), f"File {file} was not generated"
+            assert file_path.stat().st_size > 0, f"File {file} is empty"
+            
+            # Verificar que cada archivo sea una imagen válida
+            with Image.open(file_path) as img:
+                assert img.size[0] > 0 and img.size[1] > 0, f"Invalid image dimensions for {file}"
+                
     except Exception as e:
         # Listar archivos que sí se generaron
         generated_files = list(temp_output_dir.glob('*.png'))
-        
         pytest.fail(
             f"Dashboard generation failed with error: {str(e)}\n"
             f"Directory contents: {[f.name for f in generated_files]}"
         )
-    
-    expected_files = {
-        'cel_heatmap.png',
-        'cel_boxplots.png',
-        'weight_differences.png',
-        'risk_return.png',
-        'cel_confidence.png'
-    }
-    
-    # Verificar cada archivo
-    for file in expected_files:
-        file_path = temp_output_dir / file
-        assert file_path.exists(), f"File {file} was not generated"
-        assert file_path.stat().st_size > 0, f"File {file} is empty"
     
     plt.close('all')
 
@@ -183,11 +206,11 @@ def test_invalid_data_handling(visualizer, temp_output_dir):
     with pytest.raises(Exception):
         visualizer.plot_cel_heatmap(invalid_df, str(temp_output_dir / "test.png"))
 
-@pytest.mark.parametrize("error_type", ['means', 'variances', 'covariances'])
-def test_color_consistency(visualizer, error_type):
+def test_color_consistency(visualizer):
     """Test color consistency across plots."""
-    assert error_type in visualizer.colors
-    assert visualizer.colors[error_type].startswith('#')
+    for error_type in ['means', 'variances', 'covariances']:
+        assert error_type in visualizer.colors
+        assert visualizer.colors[error_type].startswith('#')
 
 def test_figure_setup(visualizer):
     """Test figure setup helper function."""
@@ -199,3 +222,24 @@ def test_figure_setup(visualizer):
     assert ax.get_title() == title
     
     plt.close('all')
+
+def test_data_structure_validation(sample_results_df):
+    """Test that sample data has the correct structure."""
+    # Verificar estructura del índice
+    assert isinstance(sample_results_df.index, pd.MultiIndex)
+    assert list(sample_results_df.index.names) == ['error_type', 'error_magnitude', 'risk_tolerance']
+    
+    # Verificar columnas requeridas
+    required_columns = [
+        ('cel', 'mean'),
+        ('cel', 'std'),
+        ('mean_weight_diff', 'mean'),
+        ('active_positions', 'mean')
+    ]
+    
+    for col in required_columns:
+        assert col in sample_results_df.columns, f"Missing required column: {col}"
+    
+    # Verificar tipos de error
+    error_types = sample_results_df.index.get_level_values('error_type').unique()
+    assert all(et in error_types for et in ['means', 'variances', 'covariances'])

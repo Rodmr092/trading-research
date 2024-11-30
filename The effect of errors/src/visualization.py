@@ -1,16 +1,16 @@
 """
-Visualization Module for Portfolio Error Analysis.
-Provides comprehensive visualization tools for analyzing estimation errors
-in portfolio optimization.
+Visualization Module for Portfolio Optimization Error Analysis.
+Provides comprehensive visualization tools for analyzing the impact of estimation errors.
 """
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from typing import Optional, Dict, List, Tuple
-import logging
+from typing import Dict, Optional, Union
 from pathlib import Path
+import logging
+from dataclasses import dataclass
 
 # Configure logging
 logging.basicConfig(
@@ -19,299 +19,424 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+@dataclass
+class VisualizationConfig:
+    """Configuration for visualization settings"""
+    figsize: tuple = (12, 8)
+    style: str = "whitegrid"
+    context: str = "notebook"
+    palette: str = "viridis"
+    font_scale: float = 1.2
+    save_dir: Optional[Path] = None
+    dpi: int = 300
+    
+    def __post_init__(self):
+        """Set up visualization environment"""
+        sns.set_style(self.style)
+        sns.set_context(self.context, font_scale=self.font_scale)
+        if self.save_dir:
+            self.save_dir = Path(self.save_dir)
+            self.save_dir.mkdir(parents=True, exist_ok=True)
+
 class PortfolioVisualizer:
     """
-    Creates standardized visualizations for portfolio optimization error analysis.
+    Implements visualization methods for portfolio optimization error analysis.
     """
     
-    def __init__(self, style: str = 'default', figsize: Tuple[int, int] = (10, 6)):
+    def __init__(self, config: Optional[VisualizationConfig] = None):
+        """Initialize visualizer with configuration"""
+        self.config = config or VisualizationConfig()
+        
+    def _save_figure(self, fig: plt.Figure, filename: str):
+        """Save figure if save_dir is configured"""
+        if self.config.save_dir:
+            filepath = self.config.save_dir / filename
+            fig.savefig(filepath, dpi=self.config.dpi, bbox_inches='tight')
+            logger.info(f"Saved figure to {filepath}")
+    
+    def plot_cel_distribution(self, results: pd.DataFrame) -> plt.Figure:
         """
-        Initialize visualizer with consistent style settings.
-        
-        Args:
-            style: matplotlib style to use
-            figsize: default figure size
+        Plot Cash Equivalent Loss (CEL) distribution by error type and magnitude.
         """
-        self.style = style
-        self.figsize = figsize
-        self.colors = {
-            'means': '#2ecc71',
-            'variances': '#e74c3c',
-            'covariances': '#3498db'
-        }
-        # Configuración básica del estilo
-        plt.style.use(style)
-        sns.set_style("whitegrid")
-        
-    def setup_figure(self, title: str) -> Tuple[plt.Figure, plt.Axes]:
-        """Create figure with consistent styling."""
-        fig, ax = plt.subplots(figsize=self.figsize)
-        ax.set_title(title, pad=20)
-        return fig, ax
-        
-    def plot_cel_heatmap(self, results_df: pd.DataFrame, save_path: Optional[str] = None) -> None:
-        """Create heatmap showing CEL variation with error magnitude and risk tolerance."""
-        plt.figure(figsize=(15, 5))
-        
-        for i, error_type in enumerate(['means', 'variances', 'covariances'], 1):
-            plt.subplot(1, 3, i)
-            
-            # Filtrar por tipo de error y extraer los valores CEL
-            mask = results_df.index.get_level_values('error_type') == error_type
-            data = results_df[mask]
-            
-            # Crear una matriz pivote directamente del MultiIndex
-            pivot_data = data[('cel', 'mean')].unstack('error_magnitude')
-            
-            sns.heatmap(
-                pivot_data,
-                cmap='YlOrRd',
-                annot=True,
-                fmt='.3f',
-                cbar_kws={'label': 'CEL'}
-            )
-            
-            plt.title(f'CEL Heatmap - {error_type.capitalize()}')
-            plt.xlabel('Error Magnitude')
-            plt.ylabel('Risk Tolerance')
-        
-        plt.tight_layout()
-        if save_path:
-            plt.savefig(save_path, bbox_inches='tight', dpi=300)
-            
-    def plot_cel_boxplots(self,
-                         results_df: pd.DataFrame,
-                         save_path: Optional[str] = None) -> None:
-        """
-        Create box plots showing CEL distribution across error types.
-        
-        Args:
-            results_df: DataFrame with error analysis results
-            save_path: Optional path to save the plot
-        """
-        fig, ax = self.setup_figure('CEL Distribution by Error Type and Magnitude')
+        fig, ax = plt.subplots(figsize=self.config.figsize)
         
         # Prepare data for plotting
-        plot_data = results_df.reset_index()
+        plot_data = results.xs('mean', level=1, axis=1)['cel'].reset_index()
         
-        # Create box plots
-        sns.boxplot(data=plot_data,
-                   x='error_magnitude',
-                   y=('cel', 'mean'),
-                   hue='error_type',
-                   palette=self.colors)
-        
-        plt.xlabel('Error Magnitude')
-        plt.ylabel('Cash Equivalent Loss (CEL)')
-        plt.legend(title='Error Type')
-        
-        if save_path:
-            plt.savefig(save_path, bbox_inches='tight', dpi=300)
-            
-    def plot_weight_differences(self, results_df: pd.DataFrame, save_path: Optional[str] = None) -> None:
-        """Create violin plots showing distribution of weight differences."""
-        fig, ax = self.setup_figure('Portfolio Weight Differences Distribution')
-        
-        # Preparar datos
-        plot_data = results_df.reset_index()
-        plot_data['mean_weight_diff'] = plot_data['mean_weight_diff'].astype(float)
-        
-        # Crear violin plot
-        sns.violinplot(
+        # Create boxplot
+        sns.boxplot(
             data=plot_data,
+            x='error_magnitude',
+            y='cel',
+            hue='error_type',
+            ax=ax
+        )
+        
+        # Customize plot
+        ax.set_title('Distribution of Cash Equivalent Loss by Error Type and Magnitude', 
+                    pad=20)
+        ax.set_xlabel('Error Magnitude')
+        ax.set_ylabel('Cash Equivalent Loss')
+        
+        # Add legend with better placement
+        ax.legend(title='Error Type', bbox_to_anchor=(1.05, 1), loc='upper left')
+        
+        plt.tight_layout()
+        self._save_figure(fig, 'cel_distribution.png')
+        
+        return fig
+    
+    def plot_risk_tolerance_impact(self, results: pd.DataFrame) -> plt.Figure:
+        """
+        Plot impact of risk tolerance on CEL for different error types.
+        """
+        fig, ax = plt.subplots(figsize=self.config.figsize)
+        
+        # Prepare data
+        plot_data = results.xs('mean', level=1, axis=1)['cel'].reset_index()
+        
+        # Create lineplot
+        sns.lineplot(
+            data=plot_data,
+            x='risk_tolerance',
+            y='cel',
+            hue='error_type',
+            style='error_magnitude',
+            markers=True,
+            dashes=False,
+            ax=ax
+        )
+        
+        # Customize plot
+        ax.set_title('Impact of Risk Tolerance on Cash Equivalent Loss', 
+                    pad=20)
+        ax.set_xlabel('Risk Tolerance')
+        ax.set_ylabel('Average Cash Equivalent Loss')
+        
+        # Add legend
+        ax.legend(title='Error Type & Magnitude', 
+                 bbox_to_anchor=(1.05, 1), 
+                 loc='upper left')
+        
+        plt.tight_layout()
+        self._save_figure(fig, 'risk_tolerance_impact.png')
+        
+        return fig
+    
+    def plot_weight_differences(self, results: pd.DataFrame) -> plt.Figure:
+        """
+        Plot distribution of weight differences for different error types.
+        """
+        fig, axes = plt.subplots(1, 2, figsize=(self.config.figsize[0]*2, self.config.figsize[1]))
+        
+        # Prepare data
+        max_diff_data = results.xs('mean', level=1, axis=1)['max_weight_diff'].reset_index()
+        mean_diff_data = results.xs('mean', level=1, axis=1)['mean_weight_diff'].reset_index()
+        
+        # Plot maximum weight differences
+        sns.boxplot(
+            data=max_diff_data,
+            x='error_magnitude',
+            y='max_weight_diff',
+            hue='error_type',
+            ax=axes[0]
+        )
+        axes[0].set_title('Maximum Weight Differences')
+        axes[0].set_xlabel('Error Magnitude')
+        axes[0].set_ylabel('Maximum Weight Difference')
+        
+        # Plot mean weight differences
+        sns.boxplot(
+            data=mean_diff_data,
             x='error_magnitude',
             y='mean_weight_diff',
             hue='error_type',
-            split=True,
-            palette=self.colors
+            ax=axes[1]
         )
+        axes[1].set_title('Mean Weight Differences')
+        axes[1].set_xlabel('Error Magnitude')
+        axes[1].set_ylabel('Mean Weight Difference')
         
-        plt.xlabel('Error Magnitude')
-        plt.ylabel('Mean Weight Difference')
-        plt.legend(title='Error Type')
+        # Adjust layout
+        plt.tight_layout()
+        self._save_figure(fig, 'weight_differences.png')
         
-        if save_path:
-            plt.savefig(save_path, bbox_inches='tight', dpi=300)
-        
-    def plot_risk_return_scatter(self,
-                               results_df: pd.DataFrame,
-                               save_path: Optional[str] = None) -> None:
+        return fig
+    
+    def plot_active_positions(self, results: pd.DataFrame) -> plt.Figure:
         """
-        Create scatter plot comparing risk-return characteristics.
-        
-        Args:
-            results_df: DataFrame with error analysis results
-            save_path: Optional path to save the plot
+        Plot number of active positions for different error types.
         """
-        fig, ax = self.setup_figure('Risk-Return Comparison')
+        fig, ax = plt.subplots(figsize=self.config.figsize)
         
         # Prepare data
-        plot_data = results_df.reset_index()
+        plot_data = results.xs('mean', level=1, axis=1)['active_positions'].reset_index()
         
-        for error_type in ['means', 'variances', 'covariances']:
-            mask = plot_data['error_type'] == error_type
-            
-            # Plot optimal portfolios
-            plt.scatter(plot_data[mask]['optimal_risk'],
-                       plot_data[mask]['optimal_return'],
-                       label=f'{error_type} - Optimal',
-                       color=self.colors[error_type],
-                       alpha=0.6,
-                       marker='o')
-                       
-            # Plot suboptimal portfolios
-            plt.scatter(plot_data[mask]['suboptimal_risk'],
-                       plot_data[mask]['suboptimal_return'],
-                       label=f'{error_type} - Suboptimal',
-                       color=self.colors[error_type],
-                       alpha=0.3,
-                       marker='x')
+        # Create barplot
+        sns.barplot(
+            data=plot_data,
+            x='error_type',
+            y='active_positions',
+            hue='error_magnitude',
+            ax=ax
+        )
         
-        plt.xlabel('Portfolio Risk (Volatility)')
-        plt.ylabel('Expected Return')
-        plt.legend()
+        # Customize plot
+        ax.set_title('Average Number of Active Positions by Error Type', 
+                    pad=20)
+        ax.set_xlabel('Error Type')
+        ax.set_ylabel('Average Number of Active Positions')
         
-        if save_path:
-            plt.savefig(save_path, bbox_inches='tight', dpi=300)
-            
-    def plot_cel_confidence_bands(self, results_df: pd.DataFrame, save_path: Optional[str] = None) -> None:
-        """Create line plot with confidence bands showing CEL variation."""
-        logger.info("Starting plot_cel_confidence_bands...")
+        # Add legend
+        ax.legend(title='Error Magnitude', 
+                 bbox_to_anchor=(1.05, 1), 
+                 loc='upper left')
         
-        # Crear nueva figura
-        plt.figure(figsize=self.figsize)
+        plt.tight_layout()
+        self._save_figure(fig, 'active_positions.png')
         
-        try:
-            for error_type in ['means', 'variances', 'covariances']:
-                # Filtrar datos por tipo de error
-                mask = results_df.index.get_level_values('error_type') == error_type
-                data = results_df[mask]
-                
-                # Obtener magnitudes de error únicas y ordenadas
-                error_magnitudes = np.sort(data.index.get_level_values('error_magnitude').unique())
-                means = []
-                stds = []
-                
-                # Calcular medias y std para cada magnitud de error
-                for mag in error_magnitudes:
-                    mag_data = data[data.index.get_level_values('error_magnitude') == mag]
-                    means.append(mag_data[('cel', 'mean')].mean())
-                    stds.append(mag_data[('cel', 'std')].mean())
-                
-                means = np.array(means)
-                stds = np.array(stds)
-                
-                # Plotear línea principal
-                plt.plot(error_magnitudes, means, 
-                        label=error_type.capitalize(),
-                        color=self.colors[error_type],
-                        marker='o',
-                        linewidth=2)
-                
-                # Agregar bandas de confianza
-                plt.fill_between(error_magnitudes,
-                            means - 1.96 * stds,
-                            means + 1.96 * stds,
-                            alpha=0.2,
-                            color=self.colors[error_type])
-            
-            plt.title('CEL Variation with Error Magnitude', pad=20)
-            plt.xlabel('Error Magnitude')
-            plt.ylabel('Cash Equivalent Loss (CEL)')
-            plt.legend(title='Error Type')
-            plt.grid(True, alpha=0.3)
-            plt.tight_layout()
-            
-            if save_path:
-                logger.info(f"Saving confidence bands plot to {save_path}")
-                plt.savefig(save_path, bbox_inches='tight', dpi=300)
-                plt.close()
-                
-                # Verificar que el archivo se haya guardado
-                if not Path(save_path).exists():
-                    raise RuntimeError(f"Failed to save confidence bands plot to {save_path}")
-                
-                logger.info("Confidence bands plot saved successfully")
-                
-            return plt.gcf()
-            
-        except Exception as e:
-            logger.error(f"Error in plot_cel_confidence_bands: {str(e)}")
-            raise
-        finally:
-            plt.close('all')
+        return fig
+    
+    def plot_cel_vs_error_magnitude(self, results: pd.DataFrame) -> plt.Figure:
+        """
+        Plot CEL vs error magnitude (k) for different error types.
+        Similar to Exhibit 4 in the paper.
+        """
+        fig, ax = plt.subplots(figsize=self.config.figsize)
+        
+        # Prepare data - group by error type and magnitude
+        plot_data = results.xs('mean', level=1, axis=1)['cel'].groupby(
+            ['error_type', 'error_magnitude']
+        ).mean().reset_index()
+        
+        # Create line plot
+        sns.lineplot(
+            data=plot_data,
+            x='error_magnitude',
+            y='cel',
+            hue='error_type',
+            markers=True,
+            style='error_type',
+            ax=ax
+        )
+        
+        # Customize plot
+        ax.set_title('Average Cash Equivalent Loss vs Error Magnitude', pad=20)
+        ax.set_xlabel('Error Magnitude (k)')
+        ax.set_ylabel('Average Cash Equivalent Loss (%)')
+        ax.legend(title='Parameter with Error', bbox_to_anchor=(1.05, 1))
+        
+        plt.tight_layout()
+        self._save_figure(fig, 'cel_vs_error_magnitude.png')
+        
+        return fig
 
-    def create_analysis_dashboard(self, results_df: pd.DataFrame, output_dir: str = 'figures') -> None:
-        """Generate and save all visualization plots."""
-        output_path = Path(output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
+    def plot_cel_ratios(self, results: pd.DataFrame) -> plt.Figure:
+        """
+        Plot ratios of CEL between different error types.
+        Helps visualize relative importance of different error types.
+        """
+        fig, ax = plt.subplots(figsize=self.config.figsize)
         
-        plots_to_generate = [
-            (self.plot_cel_heatmap, 'cel_heatmap.png'),
-            (self.plot_cel_boxplots, 'cel_boxplots.png'),
-            (self.plot_weight_differences, 'weight_differences.png'),
-            (self.plot_risk_return_scatter, 'risk_return.png'),
-            (self.plot_cel_confidence_bands, 'cel_confidence.png')
-        ]
+        # Calculate mean CEL for each error type and magnitude
+        means = results.xs('mean', level=1, axis=1)['cel'].groupby(
+            ['error_type', 'error_magnitude', 'risk_tolerance']
+        ).mean().unstack(level=0)
         
-        for plot_func, filename in plots_to_generate:
-            file_path = output_path / filename
-            plt.close('all')  # Limpiar cualquier figura existente
+        # Calculate ratios
+        ratios = pd.DataFrame({
+            'means_to_variances': means['means'] / means['variances'],
+            'means_to_covariances': means['means'] / means['covariances'],
+            'variances_to_covariances': means['variances'] / means['covariances']
+        }).reset_index()
+        
+        # Melt the data for plotting
+        plot_data = pd.melt(
+            ratios, 
+            id_vars=['error_magnitude', 'risk_tolerance'],
+            var_name='ratio_type',
+            value_name='ratio'
+        )
+        
+        # Create line plot
+        sns.lineplot(
+            data=plot_data,
+            x='risk_tolerance',
+            y='ratio',
+            hue='ratio_type',
+            style='error_magnitude',
+            markers=True,
+            ax=ax
+        )
+        
+        # Customize plot
+        ax.set_title('Ratios of CEL Between Error Types vs Risk Tolerance', pad=20)
+        ax.set_xlabel('Risk Tolerance')
+        ax.set_ylabel('CEL Ratio')
+        ax.legend(title='Ratio Type', bbox_to_anchor=(1.05, 1))
+        
+        plt.tight_layout()
+        self._save_figure(fig, 'cel_ratios.png')
+        
+        return fig
+
+    def plot_cel_statistics(self, results: pd.DataFrame) -> plt.Figure:
+        """
+        Plot min, mean, and max CEL for each error type.
+        Similar to Exhibit 3 in the paper.
+        """
+        # Prepare data
+        stats = results['cel'].groupby(['error_type', 'error_magnitude']).agg(['mean', 'min', 'max'])
+        stats = stats.reset_index()
+        
+        # Create figure with subplots for each statistic
+        fig, axes = plt.subplots(1, 3, figsize=(self.config.figsize[0]*2, self.config.figsize[1]))
+        
+        metrics = ['mean', 'min', 'max']
+        titles = ['Mean CEL', 'Minimum CEL', 'Maximum CEL']
+        
+        for ax, metric, title in zip(axes, metrics, titles):
+            sns.barplot(
+                data=stats,
+                x='error_magnitude',
+                y=metric,
+                hue='error_type',
+                ax=ax
+            )
+            ax.set_title(title)
+            ax.set_xlabel('Error Magnitude (k)')
+            ax.set_ylabel('CEL (%)')
+        
+        plt.tight_layout()
+        self._save_figure(fig, 'cel_statistics.png')
+        
+        return fig
+
+    def plot_risk_tolerance_impact_detailed(self, results: pd.DataFrame) -> plt.Figure:
+        """
+        Plot detailed analysis of risk tolerance impact on CEL for each error type.
+        """
+        fig, axes = plt.subplots(1, 3, figsize=(self.config.figsize[0]*2, self.config.figsize[1]))
+        
+        error_types = ['means', 'variances', 'covariances']
+        
+        for ax, error_type in zip(axes, error_types):
+            # Filter data for current error type
+            type_data = results.xs('mean', level=1, axis=1)['cel'][
+                results.index.get_level_values('error_type') == error_type
+            ].reset_index()
             
-            try:
-                logger.info(f"Generating {filename}...")
-                plot_func(results_df, str(file_path))
-                
-                # Verificar que el archivo se haya generado correctamente
-                if not file_path.exists():
-                    raise RuntimeError(f"Failed to generate {filename}")
-                if file_path.stat().st_size == 0:
-                    raise RuntimeError(f"Generated file {filename} is empty")
-                    
-                logger.info(f"Successfully generated {filename}")
-                
-            except Exception as e:
-                logger.error(f"Error generating {filename}: {str(e)}")
-                raise RuntimeError(f"Failed to generate {filename}: {str(e)}")
-                
-            finally:
-                plt.close('all')
+            sns.lineplot(
+                data=type_data,
+                x='risk_tolerance',
+                y='cel',
+                hue='error_magnitude',
+                markers=True,
+                ax=ax
+            )
+            
+            ax.set_title(f'Impact of Risk Tolerance\non {error_type.capitalize()} Errors')
+            ax.set_xlabel('Risk Tolerance')
+            ax.set_ylabel('Average CEL (%)')
+            
+        plt.tight_layout()
+        self._save_figure(fig, 'risk_tolerance_detailed.png')
         
-        # Verificación final
-        all_files = list(output_path.glob('*.png'))
-        logger.info(f"Generated files: {[f.name for f in all_files]}")
+        return fig
+
+    def create_paper_style_dashboard(self, results: pd.DataFrame) -> plt.Figure:
+        """
+        Create a comprehensive dashboard mimicking the paper's analysis style.
+        """
+        fig = plt.figure(figsize=(self.config.figsize[0]*2, self.config.figsize[1]*2))
+        gs = fig.add_gridspec(2, 2)
         
-        if len(all_files) != len(plots_to_generate):
-            missing = set(f[1] for f in plots_to_generate) - set(f.name for f in all_files)
-            raise RuntimeError(f"Some files were not generated: {missing}")
+        # CEL vs Error Magnitude (Exhibit 4 style)
+        ax1 = fig.add_subplot(gs[0, 0])
+        plot_data = results.xs('mean', level=1, axis=1)['cel'].groupby(
+            ['error_type', 'error_magnitude']
+        ).mean().reset_index()
+        sns.lineplot(
+            data=plot_data,
+            x='error_magnitude',
+            y='cel',
+            hue='error_type',
+            markers=True,
+            ax=ax1
+        )
+        ax1.set_title('CEL vs Error Magnitude')
         
-def plot_correlation_matrix(matrix: np.ndarray,
-                          title: str,
-                          ax: Optional[plt.Axes] = None) -> plt.Axes:
+        # CEL Ratios
+        ax2 = fig.add_subplot(gs[0, 1])
+        means = results.xs('mean', level=1, axis=1)['cel'].groupby(
+            ['error_type', 'risk_tolerance']
+        ).mean().unstack(level=0)
+        ratios = pd.DataFrame({
+            'means/variances': means['means'] / means['variances'],
+            'means/covariances': means['means'] / means['covariances']
+        }).reset_index()
+        sns.lineplot(
+            data=pd.melt(ratios, id_vars=['risk_tolerance']),
+            x='risk_tolerance',
+            y='value',
+            hue='variable',
+            ax=ax2
+        )
+        ax2.set_title('CEL Ratios vs Risk Tolerance')
+        
+        # Statistics Table (Exhibit 3 style)
+        ax3 = fig.add_subplot(gs[1, :])
+        stats = results['cel'].groupby(['error_type', 'error_magnitude']).agg(['mean', 'min', 'max'])
+        ax3.axis('tight')
+        ax3.axis('off')
+        table = ax3.table(
+            cellText=stats.values.round(4),
+            colLabels=['Mean CEL', 'Min CEL', 'Max CEL'],
+            rowLabels=stats.index,
+            cellLoc='center',
+            loc='center'
+        )
+        table.auto_set_font_size(False)
+        table.set_fontsize(9)
+        table.scale(1.2, 1.5)
+        
+        plt.tight_layout()
+        self._save_figure(fig, 'paper_style_dashboard.png')
+        
+        return fig
+    
+    def generate_all_plots(self, results: pd.DataFrame) -> Dict[str, plt.Figure]:
+        """
+        Generate all available plots.
+        
+        Args:
+            results: DataFrame with error analysis results
+            
+        Returns:
+            Dict[str, plt.Figure]: Dictionary of generated figures
+        """
+        return {
+            'cel_distribution': self.plot_cel_distribution(results),
+            'risk_tolerance_impact': self.plot_risk_tolerance_impact(results),
+            'weight_differences': self.plot_weight_differences(results),
+            'active_positions': self.plot_active_positions(results),
+            'cel_vs_error_magnitude': self.plot_cel_vs_error_magnitude(results),
+            'cel_ratios': self.plot_cel_ratios(results),
+            'cel_statistics': self.plot_cel_statistics(results),
+            'risk_tolerance_detailed': self.plot_risk_tolerance_impact_detailed(results),
+            'paper_style_dashboard': self.create_paper_style_dashboard(results)
+        }
+
+
+def create_visualizer(save_dir: Optional[Union[str, Path]] = None) -> PortfolioVisualizer:
     """
-    Create heatmap visualization of correlation/covariance matrix.
+    Convenience function to create a configured visualizer.
     
     Args:
-        matrix: Correlation or covariance matrix
-        title: Plot title
-        ax: Optional matplotlib axes
+        save_dir: Optional directory to save generated plots
         
     Returns:
-        matplotlib axes with plot
+        PortfolioVisualizer: Configured visualizer instance
     """
-    if ax is None:
-        _, ax = plt.subplots(figsize=(8, 6))
-        
-    mask = np.triu(np.ones_like(matrix), k=1)
-    sns.heatmap(matrix,
-                mask=mask,
-                cmap='RdYlBu_r',
-                ax=ax,
-                center=0,
-                annot=True,
-                fmt='.2f',
-                square=True,
-                cbar_kws={'label': 'Correlation'})
-                
-    ax.set_title(title)
-    return ax
+    config = VisualizationConfig(save_dir=save_dir)
+    return PortfolioVisualizer(config)
